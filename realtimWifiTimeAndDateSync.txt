@@ -1,0 +1,171 @@
+#include <WiFi.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <time.h>
+
+// -------------------- Pins --------------------
+#define SDA_PIN 33
+#define SCL_PIN 25
+#define TOUCH_PIN 5
+
+// -------------------- Display --------------------
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
+
+// -------------------- WiFi --------------------
+const char* ssid = "YourSSID";
+const char* password = "SSID Password";
+
+// Dubai UTC+4
+const long gmtOffset_sec = 4 * 3600;
+const int daylightOffset_sec = 0;
+
+bool timeSynced = false;
+
+//--------------------------------------------------
+void drawSun(int x, int y)
+{
+  display.drawCircle(x, y, 8, WHITE);
+  display.fillCircle(x, y, 5, WHITE);
+
+  for (int i = 0; i < 360; i += 45)
+  {
+    float rad = radians(i);
+    int x1 = x + cos(rad) * 10;
+    int y1 = y + sin(rad) * 10;
+    int x2 = x + cos(rad) * 14;
+    int y2 = y + sin(rad) * 14;
+
+    display.drawLine(x1, y1, x2, y2, WHITE);
+  }
+}
+
+//--------------------------------------------------
+void drawMoon(int x, int y)
+{
+  display.fillCircle(x, y, 8, WHITE);
+  display.fillCircle(x + 4, y - 2, 8, BLACK);
+  display.drawCircle(x, y, 8, WHITE);
+}
+
+//--------------------------------------------------
+void connectWiFi()
+{
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(15, 28);
+  display.println("Connecting WiFi...");
+  display.display();
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+  }
+}
+
+//--------------------------------------------------
+void syncClock()
+{
+  display.clearDisplay();
+  display.setCursor(25, 28);
+  display.println("Syncing Time...");
+  display.display();
+
+  configTime(gmtOffset_sec, daylightOffset_sec,
+             "pool.ntp.org",
+             "time.nist.gov");
+
+  struct tm timeinfo;
+
+  while (!getLocalTime(&timeinfo))
+  {
+    delay(500);
+  }
+
+  timeSynced = true;
+}
+
+//--------------------------------------------------
+void drawClock()
+{
+  struct tm timeinfo;
+
+  if (!getLocalTime(&timeinfo))
+    return;
+
+  display.clearDisplay();
+
+  // Sun or Moon
+  if (timeinfo.tm_hour >= 6 && timeinfo.tm_hour < 18)
+    drawSun(12, 12);
+  else
+    drawMoon(12, 12);
+
+  char timeString[12];
+  sprintf(timeString, "%02d:%02d",
+          timeinfo.tm_hour,
+          timeinfo.tm_min,
+          timeinfo.tm_sec);
+
+  // Large Time
+  display.setTextSize(3);
+  display.setTextColor(WHITE);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  display.getTextBounds(timeString, 0, 0, &x1, &y1, &w, &h);
+
+  display.setCursor((128 - w) / 2, 18);
+  display.print(timeString);
+
+  // Date
+  char dateString[25];
+  strftime(dateString, sizeof(dateString), "%d %b %Y", &timeinfo);
+
+  display.setTextSize(1.5);
+
+  display.getTextBounds(dateString, 0, 0, &x1, &y1, &w, &h);
+
+  display.setCursor((128 - w) / 2, 56);
+  display.print(dateString);
+
+  display.display();
+}
+
+//--------------------------------------------------
+void setup()
+{
+  Serial.begin(115200);
+
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  {
+    while (1);
+  }
+
+  display.clearDisplay();
+  display.display();
+
+  connectWiFi();
+
+  syncClock();
+}
+
+//--------------------------------------------------
+void loop()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    connectWiFi();
+    syncClock();
+  }
+
+  drawClock();
+
+  delay(1000);
+}
